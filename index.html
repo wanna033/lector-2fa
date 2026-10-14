@@ -61,6 +61,16 @@
     <div id="msg"></div>
   </div>
 
+  <div class="card">
+    <label for="bkpass">Copia de seguridad (cifrada con contraseña)</label>
+    <input id="bkpass" type="password" placeholder="Contraseña de la copia" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font:inherit">
+    <div class="row">
+      <button class="sec" id="export">Descargar copia</button>
+      <label class="btn sec" style="margin:0">Restaurar copia<input id="import" type="file" accept=".json,application/json" hidden></label>
+    </div>
+    <div class="hint" id="store-status" style="margin-top:8px"></div>
+  </div>
+
   <div class="card" id="list"></div>
   <p class="hint">Todo se procesa en tu navegador. Las claves se guardan solo en este equipo. Toca un código para copiarlo. <b>Abrir pestaña</b> muestra el código de esa cuenta en su propia pestaña, que se actualiza sola.</p>
 
@@ -80,7 +90,59 @@ const $ = id => document.getElementById(id);
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 let accounts = [];
 try { accounts = JSON.parse(localStorage.getItem('accounts2fa') || '[]'); } catch {}
-const save = () => { try { localStorage.setItem('accounts2fa', JSON.stringify(accounts)); } catch {} };
+/* Guardado doble (localStorage + IndexedDB) y almacenamiento persistente */
+const idbOpen = () => new Promise((res, rej) => {
+  const r = indexedDB.open('lector2fa', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('kv');
+  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+});
+const idbSet = async v => { try { const db = await idbOpen(); db.transaction('kv', 'readwrite').objectStore('kv').put(v, 'accounts'); } catch {} };
+const idbGet = async () => { try { const db = await idbOpen(); return await new Promise(res => { const q = db.transaction('kv').objectStore('kv').get('accounts'); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); } catch { return null; } };
+const save = () => { try { localStorage.setItem('accounts2fa', JSON.stringify(accounts)); } catch {} idbSet(JSON.parse(JSON.stringify(accounts))); askPersist(); };
+let persistAsked = false;
+async function askPersist() {
+  if (persistAsked || !navigator.storage || !navigator.storage.persist) return;
+  persistAsked = true;
+  try { await navigator.storage.persist(); } catch {}
+  showStatus();
+}
+async function showStatus() {
+  const el = $('store-status'); if (!el) return;
+  let p = false; try { p = await navigator.storage.persisted(); } catch {}
+  el.textContent = accounts.length
+    ? 'Guardado en este navegador' + (p ? ' (almacenamiento protegido).' : '. Haz una copia de seguridad para no perderlo si el navegador borra los datos.')
+    : '';
+}
+
+/* Copia de seguridad cifrada (AES-GCM + contraseña) */
+const b64 = u => btoa(String.fromCharCode(...u));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function backupKey(pass, salt) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function exportBackup() {
+  const pass = $('bkpass').value;
+  if (pass.length < 6) return msg('Escribe una contraseña de al menos 6 caracteres para cifrar la copia.', 'err');
+  if (!accounts.length) return msg('No hay cuentas que guardar.', 'err');
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await backupKey(pass, salt), new TextEncoder().encode(JSON.stringify(accounts))));
+  const blob = new Blob([JSON.stringify({ v: 1, salt: b64(salt), iv: b64(iv), data: b64(ct) })], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'copia-2fa.json'; a.click();
+  msg('Copia descargada. Guárdala en un lugar seguro y recuerda la contraseña.', 'ok');
+}
+async function importBackup(file) {
+  const pass = $('bkpass').value;
+  if (!pass) return msg('Escribe la contraseña de la copia y vuelve a elegir el archivo.', 'err');
+  try {
+    const j = JSON.parse(await file.text());
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(j.iv) }, await backupKey(pass, unb64(j.salt)), unb64(j.data));
+    const list = JSON.parse(new TextDecoder().decode(pt));
+    let n = 0;
+    for (const a of list) if (!accounts.some(x => x.secret === a.secret)) { a.id = a.id || id(); accounts.push(a); n++; }
+    save(); render(); msg(n + ' cuenta(s) restaurada(s).', 'ok');
+  } catch { msg('No se pudo abrir la copia: contraseña incorrecta o archivo dañado.', 'err'); }
+}
 const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 let dirty = false;
 accounts.forEach(a => { if (!a.id) { a.id = id(); dirty = true; } });
@@ -331,8 +393,15 @@ if (soloId) {
   };
   tick(); setInterval(tick, 250);
 } else {
+  $('export').onclick = exportBackup;
+  $('import').onchange = e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ''; };
   render();
   setInterval(update, 250);
+  // Si localStorage se vació pero IndexedDB conserva copia, restaurar
+  if (!accounts.length) idbGet().then(a => {
+    if (a && a.length) { accounts = a; save(); render(); msg('Cuentas restauradas automáticamente.', 'ok'); }
+  });
+  askPersist(); showStatus();
 }
 </script>
 </body>
