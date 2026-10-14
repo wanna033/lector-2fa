@@ -5,34 +5,54 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lector 2FA</title>
 <style>
-  :root{--bg:#f4f5f7;--card:#fff;--text:#1b1f24;--muted:#6b7280;--accent:#2563eb;--border:#e5e7eb;--bad:#dc2626;--ok:#16a34a}
-  @media (prefers-color-scheme:dark){:root{--bg:#0f1217;--card:#181c23;--text:#e8eaed;--muted:#9aa3af;--accent:#60a5fa;--border:#2a303a}}
+  :root{--bg:#f3f5f4;--card:#ffffff;--text:#16201d;--muted:#5d6b66;--accent:#0f766e;--on-accent:#ffffff;--border:#dbe3e0;--bad:#b91c1c;--ok:#15803d;--shadow:0 10px 30px rgba(0,0,0,.18)}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1514;--card:#162120;--text:#e6efec;--muted:#93a5a0;--accent:#4fd1c0;--on-accent:#06201c;--border:#27403c;--bad:#f87171;--ok:#4ade80;--shadow:0 10px 30px rgba(0,0,0,.6);color-scheme:dark}}
+  :root[data-theme="dark"]{--bg:#0e1514;--card:#162120;--text:#e6efec;--muted:#93a5a0;--accent:#4fd1c0;--on-accent:#06201c;--border:#27403c;--bad:#f87171;--ok:#4ade80;--shadow:0 10px 30px rgba(0,0,0,.6);color-scheme:dark}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);font:16px system-ui,sans-serif;padding:16px}
-  main{max-width:520px;margin:0 auto}
+  main{max-width:560px;margin:0 auto}
   h1{font-size:1.4rem;margin:8px 0 16px}
   .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
   label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
   input[type=text]{width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font:inherit}
-  button,.btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer;display:inline-block}
+  button,.btn{background:var(--accent);color:var(--on-accent);border:0;border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer;display:inline-block}
   button.sec,.btn.sec{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;color:var(--text);font-size:.9rem}
   #msg{font-size:.9rem;margin-top:8px;min-height:1.2em}
   .err{color:var(--bad)}.ok{color:var(--ok)}
-  .acc{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--border)}
-  .acc:first-child{border-top:0}
-  .info{flex:1;min-width:0}
-  .name{font-size:.85rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .code{font:600 1.9rem ui-monospace,Consolas,monospace;letter-spacing:.08em;cursor:pointer}
-  .ring{width:38px;height:38px;flex:none}
-  .del{background:none;color:var(--muted);padding:4px 8px;font-size:1.2rem}
   video{width:100%;border-radius:8px;margin-top:10px;display:none}
+  .acc{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--border);flex-wrap:wrap}
+  .acc:first-child{border-top:0}
+  .info{flex:1;min-width:150px}
+  .name{font-size:.85rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .code{font:600 1.9rem ui-monospace,Consolas,monospace;letter-spacing:.08em;cursor:pointer;font-variant-numeric:tabular-nums}
+  .ring{width:38px;height:38px;flex:none;color:var(--text)}
+  .ibtn{background:none;color:var(--muted);border:1px solid var(--border);padding:6px 9px;font-size:.8rem}
+  .ibtn:hover{color:var(--accent);border-color:var(--accent)}
   .empty{color:var(--muted);text-align:center;padding:12px}
+  .hint{color:var(--muted);font-size:.8rem}
+
+  /* Ventanas flotantes: una por cuenta */
+  .win{position:fixed;z-index:50;width:290px;max-width:calc(100vw - 16px);background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+  .win header{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:move;user-select:none;touch-action:none}
+  .win header .t{flex:1;min-width:0;font-size:.85rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .win header button{background:none;color:var(--muted);padding:2px 8px;font-size:1.1rem}
+  .win .body{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px}
+  .win .code{font-size:2.2rem}
+
+  /* Modo ventana propia (popup): solo una cuenta */
+  body.solo main > :not(#soloview){display:none}
+  #soloview{display:none}
+  body.solo #soloview{display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:6vh;text-align:center}
+  body.solo #soloview .code{font-size:clamp(2.4rem,14vw,4.5rem)}
+  body.solo #soloview .ring{width:72px;height:72px}
 </style>
 </head>
 <body>
 <main>
-  <h1>🔐 Lector 2FA</h1>
+  <h1>Lector 2FA</h1>
 
   <div class="card">
     <label for="secret">Clave secreta (Base32) o enlace otpauth://</label>
@@ -45,11 +65,21 @@
       <button class="sec" id="cam">Escanear con cámara</button>
     </div>
     <video id="video" playsinline muted></video>
+    <label class="chk"><input type="checkbox" id="autowin" checked> Abrir una ventana propia con el código cada vez que añada una cuenta</label>
     <div id="msg"></div>
   </div>
 
   <div class="card" id="list"></div>
-  <p style="color:var(--muted);font-size:.8rem">Todo se procesa en tu navegador. Las claves se guardan solo en este equipo (localStorage). Toca un código para copiarlo.</p>
+  <p class="hint">Todo se procesa en tu navegador. Las claves se guardan solo en este equipo. Toca un código para copiarlo. Con <b>Ventana</b> abres el código flotante dentro de la página (puedes arrastrarlo); con <b>Nueva pestaña</b> se abre en una ventana aparte del navegador.</p>
+
+  <div id="soloview">
+    <div class="name" id="solo-name"></div>
+    <div class="code" id="solo-code" title="Copiar">······</div>
+    <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="4"/>
+      <circle id="solo-arc" cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="4" stroke-dasharray="94.25" transform="rotate(-90 18 18)"/>
+      <text id="solo-sec" x="18" y="22" text-anchor="middle" font-size="11" fill="currentColor"></text></svg>
+    <div class="hint">Esta ventana se actualiza sola. Puedes cerrarla cuando termines.</div>
+  </div>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
@@ -59,6 +89,13 @@ const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 let accounts = [];
 try { accounts = JSON.parse(localStorage.getItem('accounts2fa') || '[]'); } catch {}
 const save = () => { try { localStorage.setItem('accounts2fa', JSON.stringify(accounts)); } catch {} };
+const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+let dirty = false;
+accounts.forEach(a => { if (!a.id) { a.id = id(); dirty = true; } });
+if (dirty) save();
+const getAuto = () => { try { return localStorage.getItem('autowin2fa') !== '0'; } catch { return true; } };
+$('autowin').checked = getAuto();
+$('autowin').onchange = e => { try { localStorage.setItem('autowin2fa', e.target.checked ? '1' : '0'); } catch {} };
 
 function b32decode(s) {
   s = s.toUpperCase().replace(/[\s=-]/g, '');
@@ -128,6 +165,8 @@ async function totp(acc, time = Date.now()) {
   return String(n).padStart(acc.digits, '0');
 }
 
+
+
 function parseInput(text, nameField) {
   text = text.trim();
   if (/^otpauth:\/\//i.test(text)) {
@@ -147,15 +186,57 @@ function parseInput(text, nameField) {
   return { name: nameField || 'Cuenta', secret: text, digits: 6, period: 30, algorithm: 'SHA1' };
 }
 
+function msg(t, cls) { const m = $('msg'); m.textContent = t; m.className = cls || ''; }
+const fmt = c => c.length === 6 ? c.slice(0, 3) + ' ' + c.slice(3) : c;
+
 async function addAccount(text, nameField) {
   const acc = parseInput(text, nameField);
-  b32decode(acc.secret);           // valida
-  await totp(acc);                  // valida algoritmo
+  b32decode(acc.secret);
+  await totp(acc);
+  acc.id = id();
   accounts.push(acc); save(); render();
+  if ($('autowin').checked) openWin(acc.id);
 }
 
-function msg(t, cls) { const m = $('msg'); m.textContent = t; m.className = cls || ''; }
+/* ---------- Ventanas flotantes ---------- */
+const wins = new Map();
+function openWin(accId) {
+  if (wins.has(accId)) { wins.get(accId).el.style.zIndex = 50 + wins.size; return; }
+  const a = accounts.find(x => x.id === accId); if (!a) return;
+  const el = document.createElement('div'); el.className = 'win';
+  el.innerHTML = `<header><span class="t"></span><button title="Cerrar">✕</button></header>
+    <div class="body"><div class="code" title="Copiar">······</div>
+    <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="4"/>
+    <circle class="arc" cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="4" stroke-dasharray="94.25" transform="rotate(-90 18 18)"/>
+    <text class="sec" x="18" y="22" text-anchor="middle" font-size="11" fill="currentColor"></text></svg></div>`;
+  el.querySelector('.t').textContent = a.name;
+  const n = wins.size;
+  el.style.left = Math.max(8, Math.min(innerWidth - 306, 40 + n * 28)) + 'px';
+  el.style.top = (80 + n * 28) + 'px';
+  document.body.appendChild(el);
+  wins.set(accId, { el });
+  el.querySelector('button').onclick = () => { el.remove(); wins.delete(accId); };
+  el.querySelector('.code').onclick = e => copy(e.currentTarget);
+  // arrastrar
+  const h = el.querySelector('header'); let sx, sy, ox, oy, drag = false;
+  h.onpointerdown = e => { if (e.target.tagName === 'BUTTON') return; drag = true; sx = e.clientX; sy = e.clientY; ox = el.offsetLeft; oy = el.offsetTop; h.setPointerCapture(e.pointerId); el.style.zIndex = 50 + wins.size; };
+  h.onpointermove = e => { if (!drag) return; el.style.left = Math.max(0, Math.min(innerWidth - 80, ox + e.clientX - sx)) + 'px'; el.style.top = Math.max(0, Math.min(innerHeight - 50, oy + e.clientY - sy)) + 'px'; };
+  h.onpointerup = () => drag = false;
+  update();
+}
 
+function popup(accId) {
+  const w = window.open(location.pathname + '?w=' + encodeURIComponent(accId), 'w2fa_' + accId, 'popup=yes,width=360,height=340');
+  if (!w) msg('El navegador bloqueó la ventana. Permite ventanas emergentes para esta página.', 'err');
+}
+
+function copy(el) {
+  const t = el.dataset.raw; if (!t) return;
+  const o = el.textContent;
+  navigator.clipboard.writeText(t).then(() => { el.textContent = 'Copiado'; setTimeout(() => el.textContent = o, 800); }, () => {});
+}
+
+/* ---------- Añadir ---------- */
 $('add').onclick = async () => {
   try { await addAccount($('secret').value, $('name').value.trim()); $('secret').value = ''; $('name').value = ''; msg('Cuenta añadida', 'ok'); }
   catch (e) { msg(e.message, 'err'); }
@@ -183,8 +264,7 @@ async function decodeQR(img) {
 $('file').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
   try {
-    const img = await createImageBitmap(f);
-    const text = await decodeQR(img);
+    const text = await decodeQR(await createImageBitmap(f));
     if (!text) throw new Error('No se encontró ningún QR. Recorta la captura para que solo se vea el QR, o pega la clave manual.');
     await addAccount(text, $('name').value.trim());
     msg('QR leído y cuenta añadida', 'ok');
@@ -200,66 +280,100 @@ $('cam').onclick = async () => {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     const v = $('video'); v.srcObject = stream; v.style.display = 'block'; await v.play();
     $('cam').textContent = 'Detener cámara';
+    const det = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
     const c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently: true });
     const tick = async () => {
       if (!stream) return;
       if (v.videoWidth) {
-        c.width = v.videoWidth; c.height = v.videoHeight; ctx.drawImage(v, 0, 0);
-        const d = ctx.getImageData(0, 0, c.width, c.height);
-        const r = window.jsQR && jsQR(d.data, c.width, c.height);
-        if (r) {
-          try { await addAccount(r.data, $('name').value.trim()); msg('QR escaneado y cuenta añadida', 'ok'); stopCam(); return; }
+        let text = null;
+        try { if (det) { const r = await det.detect(v); if (r.length) text = r[0].rawValue; } } catch {}
+        if (!text && window.jsQR) {
+          c.width = v.videoWidth; c.height = v.videoHeight; ctx.drawImage(v, 0, 0);
+          const d = ctx.getImageData(0, 0, c.width, c.height);
+          const r = jsQR(d.data, c.width, c.height); if (r) text = r.data;
+        }
+        if (text) {
+          try { await addAccount(text, $('name').value.trim()); msg('QR escaneado y cuenta añadida', 'ok'); stopCam(); return; }
           catch (e) { msg(e.message, 'err'); }
         }
       }
       setTimeout(tick, 250);
     };
     tick();
-  } catch { msg('No se pudo acceder a la cámara', 'err'); stopCam(); }
+  } catch { msg('No se pudo acceder a la cámara. Permite el acceso o usa la clave manual.', 'err'); stopCam(); }
 };
 
+/* ---------- Lista ---------- */
 function render() {
   const L = $('list');
   if (!accounts.length) { L.innerHTML = '<div class="empty">Aún no hay cuentas. Añade una clave o un QR.</div>'; return; }
   L.innerHTML = '';
   accounts.forEach((a, i) => {
-    const d = document.createElement('div'); d.className = 'acc';
+    const d = document.createElement('div'); d.className = 'acc'; d.dataset.id = a.id;
     d.innerHTML = `<div class="info"><div class="name"></div><div class="code" title="Copiar">······</div></div>
       <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="4"/>
       <circle class="arc" cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="4" stroke-dasharray="94.25" transform="rotate(-90 18 18)"/>
       <text class="sec" x="18" y="22" text-anchor="middle" font-size="11" fill="currentColor"></text></svg>
-      <button class="del" title="Eliminar">✕</button>`;
+      <button class="ibtn w" title="Ventana flotante en esta página">Ventana</button>
+      <button class="ibtn p" title="Abrir en una ventana aparte del navegador">Nueva pestaña</button>
+      <button class="ibtn x" title="Eliminar">✕</button>`;
     d.querySelector('.name').textContent = a.name;
-    d.querySelector('.del').onclick = () => { if (confirm('¿Eliminar "' + a.name + '"?')) { accounts.splice(i, 1); save(); render(); } };
-    d.querySelector('.code').onclick = ev => {
-      const t = ev.target.dataset.raw; if (!t) return;
-      navigator.clipboard?.writeText(t).then(() => { const o = ev.target.textContent; ev.target.textContent = 'Copiado'; setTimeout(() => ev.target.textContent = o, 800); });
+    d.querySelector('.w').onclick = () => openWin(a.id);
+    d.querySelector('.p').onclick = () => popup(a.id);
+    d.querySelector('.x').onclick = () => {
+      if (!confirm('¿Eliminar "' + a.name + '"?')) return;
+      const w = wins.get(a.id); if (w) { w.el.remove(); wins.delete(a.id); }
+      accounts.splice(i, 1); save(); render();
     };
+    d.querySelector('.code').onclick = ev => copy(ev.currentTarget);
     L.appendChild(d);
   });
   update();
 }
 
+async function paint(root, a, now) {
+  const left = a.period - (now / 1000) % a.period;
+  const codeEl = root.querySelector('.code');
+  try {
+    const c = await totp(a, now);
+    if (codeEl.dataset.raw !== c) { codeEl.dataset.raw = c; codeEl.textContent = fmt(c); }
+  } catch { codeEl.textContent = 'Error'; }
+  root.querySelector('.arc').style.strokeDashoffset = 94.25 * (1 - left / a.period);
+  root.querySelector('.sec').textContent = Math.ceil(left);
+}
+
 async function update() {
-  const rows = document.querySelectorAll('.acc');
-  for (let i = 0; i < rows.length; i++) {
-    const a = accounts[i], now = Date.now();
-    const left = a.period - (now / 1000) % a.period;
-    const codeEl = rows[i].querySelector('.code');
-    try {
-      const c = await totp(a, now);
-      if (codeEl.dataset.raw !== c) {
-        codeEl.dataset.raw = c;
-        codeEl.textContent = c.length === 6 ? c.slice(0, 3) + ' ' + c.slice(3) : c;
-      }
-    } catch { codeEl.textContent = 'Error'; }
-    rows[i].querySelector('.arc').style.strokeDashoffset = 94.25 * (1 - left / a.period);
-    rows[i].querySelector('.sec').textContent = Math.ceil(left);
+  const now = Date.now();
+  for (const row of document.querySelectorAll('.acc')) {
+    const a = accounts.find(x => x.id === row.dataset.id); if (a) await paint(row, a, now);
+  }
+  for (const [accId, w] of wins) {
+    const a = accounts.find(x => x.id === accId); if (a) await paint(w.el, a, now);
   }
 }
 
-render();
-setInterval(update, 250);
+/* ---------- Modo ventana propia (?w=ID) ---------- */
+const soloId = new URLSearchParams(location.search).get('w');
+if (soloId) {
+  document.body.classList.add('solo');
+  document.title = 'Código 2FA';
+  const sc = $('solo-code');
+  sc.onclick = () => copy(sc);
+  const tick = async () => {
+    try { accounts = JSON.parse(localStorage.getItem('accounts2fa') || '[]'); } catch {}
+    const a = accounts.find(x => x.id === soloId);
+    if (!a) { $('solo-name').textContent = 'Cuenta no encontrada. Ábrela desde la página principal.'; return; }
+    $('solo-name').textContent = a.name; document.title = a.name + ' · 2FA';
+    const now = Date.now(), left = a.period - (now / 1000) % a.period;
+    try { const c = await totp(a, now); if (sc.dataset.raw !== c) { sc.dataset.raw = c; sc.textContent = fmt(c); } } catch { sc.textContent = 'Error'; }
+    $('solo-arc').style.strokeDashoffset = 94.25 * (1 - left / a.period);
+    $('solo-sec').textContent = Math.ceil(left);
+  };
+  tick(); setInterval(tick, 250);
+} else {
+  render();
+  setInterval(update, 250);
+}
 </script>
 </body>
 </html>
