@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lector 2FA</title>
+<style>
+  :root{--bg:#f4f5f7;--card:#fff;--text:#1b1f24;--muted:#6b7280;--accent:#2563eb;--border:#e5e7eb;--bad:#dc2626;--ok:#16a34a}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1217;--card:#181c23;--text:#e8eaed;--muted:#9aa3af;--accent:#60a5fa;--border:#2a303a}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px system-ui,sans-serif;padding:16px}
+  main{max-width:520px;margin:0 auto}
+  h1{font-size:1.4rem;margin:8px 0 16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+  label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
+  input[type=text]{width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font:inherit}
+  button,.btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer;display:inline-block}
+  button.sec,.btn.sec{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  #msg{font-size:.9rem;margin-top:8px;min-height:1.2em}
+  .err{color:var(--bad)}.ok{color:var(--ok)}
+  .acc{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--border)}
+  .acc:first-child{border-top:0}
+  .info{flex:1;min-width:0}
+  .name{font-size:.85rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .code{font:600 1.9rem ui-monospace,Consolas,monospace;letter-spacing:.08em;cursor:pointer}
+  .ring{width:38px;height:38px;flex:none}
+  .del{background:none;color:var(--muted);padding:4px 8px;font-size:1.2rem}
+  video{width:100%;border-radius:8px;margin-top:10px;display:none}
+  .empty{color:var(--muted);text-align:center;padding:12px}
+</style>
+</head>
+<body>
+<main>
+  <h1>🔐 Lector 2FA</h1>
+
+  <div class="card">
+    <label for="secret">Clave secreta (Base32) o enlace otpauth://</label>
+    <input id="secret" type="text" placeholder="JBSWY3DPEHPK3PXP  ó  otpauth://totp/..." autocomplete="off" spellcheck="false">
+    <label for="name">Nombre (opcional)</label>
+    <input id="name" type="text" placeholder="Gmail, GitHub...">
+    <div class="row">
+      <button id="add">Añadir</button>
+      <label class="btn sec" style="margin:0">Leer imagen QR<input id="file" type="file" accept="image/*" hidden></label>
+      <button class="sec" id="cam">Escanear con cámara</button>
+    </div>
+    <video id="video" playsinline muted></video>
+    <div id="msg"></div>
+  </div>
+
+  <div class="card" id="list"></div>
+  <p style="color:var(--muted);font-size:.8rem">Todo se procesa en tu navegador. Las claves se guardan solo en este equipo (localStorage). Toca un código para copiarlo.</p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+let accounts = [];
+try { accounts = JSON.parse(localStorage.getItem('accounts2fa') || '[]'); } catch {}
+const save = () => { try { localStorage.setItem('accounts2fa', JSON.stringify(accounts)); } catch {} };
+
+function b32decode(s) {
+  s = s.toUpperCase().replace(/[\s=-]/g, '');
+  let bits = '';
+  for (const c of s) {
+    const i = B32.indexOf(c);
+    if (i < 0) throw new Error('Clave Base32 inválida');
+    bits += i.toString(2).padStart(5, '0');
+  }
+  const out = new Uint8Array(Math.floor(bits.length / 8));
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(bits.substr(i * 8, 8), 2);
+  if (!out.length) throw new Error('Clave vacía');
+  return out;
+}
+
+// Respaldo SHA-1/HMAC en JS puro para contextos sin crypto.subtle
+function sha1(m) {
+  const l = m.length, w = new Uint32Array(((l + 8 >> 6) + 1) * 16), r = new Uint32Array(80);
+  for (let i = 0; i < l; i++) w[i >> 2] |= m[i] << (24 - (i & 3) * 8);
+  w[l >> 2] |= 0x80 << (24 - (l & 3) * 8);
+  w[w.length - 1] = l * 8;
+  let h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476, h4 = 0xC3D2E1F0;
+  const rol = (x, n) => (x << n) | (x >>> (32 - n));
+  for (let j = 0; j < w.length; j += 16) {
+    for (let i = 0; i < 16; i++) r[i] = w[j + i];
+    for (let i = 16; i < 80; i++) r[i] = rol(r[i - 3] ^ r[i - 8] ^ r[i - 14] ^ r[i - 16], 1);
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let i = 0; i < 80; i++) {
+      const [f, k] = i < 20 ? [(b & c) | (~b & d), 0x5A827999] : i < 40 ? [b ^ c ^ d, 0x6ED9EBA1]
+        : i < 60 ? [(b & c) | (b & d) | (c & d), 0x8F1BBCDC] : [b ^ c ^ d, 0xCA62C1D6];
+      const t = (rol(a, 5) + f + e + k + r[i]) | 0;
+      e = d; d = c; c = rol(b, 30); b = a; a = t;
+    }
+    h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0;
+  }
+  const out = new Uint8Array(20);
+  [h0, h1, h2, h3, h4].forEach((v, i) => { for (let k = 0; k < 4; k++) out[i * 4 + k] = (v >>> (24 - k * 8)) & 255; });
+  return out;
+}
+function hmacSha1(key, msg) {
+  if (key.length > 64) key = sha1(key);
+  const ip = new Uint8Array(64 + msg.length), op = new Uint8Array(84);
+  for (let i = 0; i < 64; i++) { const k = key[i] || 0; ip[i] = k ^ 0x36; op[i] = k ^ 0x5c; }
+  ip.set(msg, 64); op.set(sha1(ip), 64);
+  return sha1(op);
+}
+
+async function hmac(algorithm, keyBytes, buf) {
+  if (crypto.subtle) {
+    const algo = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' }[algorithm] || 'SHA-1';
+    const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: algo }, false, ['sign']);
+    return new Uint8Array(await crypto.subtle.sign('HMAC', key, buf));
+  }
+  if (algorithm !== 'SHA1') throw new Error('Este algoritmo requiere abrir la página por https o file://');
+  return hmacSha1(keyBytes, new Uint8Array(buf));
+}
+
+async function totp(acc, time = Date.now()) {
+  const counter = Math.floor(time / 1000 / acc.period);
+  const buf = new ArrayBuffer(8);
+  const dv = new DataView(buf);
+  dv.setUint32(0, Math.floor(counter / 2 ** 32));
+  dv.setUint32(4, counter >>> 0);
+  const h = await hmac(acc.algorithm, b32decode(acc.secret), buf);
+  const o = h[h.length - 1] & 15;
+  const n = ((h[o] & 0x7f) << 24 | h[o + 1] << 16 | h[o + 2] << 8 | h[o + 3]) % 10 ** acc.digits;
+  return String(n).padStart(acc.digits, '0');
+}
+
+function parseInput(text, nameField) {
+  text = text.trim();
+  if (/^otpauth:\/\//i.test(text)) {
+    const u = new URL(text);
+    if (u.hostname !== 'totp') throw new Error('Solo se admite TOTP (basado en tiempo)');
+    const p = u.searchParams;
+    const label = decodeURIComponent(u.pathname.slice(1));
+    const issuer = p.get('issuer');
+    return {
+      name: nameField || (issuer && !label.startsWith(issuer) ? issuer + ': ' + label : label) || 'Cuenta',
+      secret: p.get('secret') || '',
+      digits: +p.get('digits') || 6,
+      period: +p.get('period') || 30,
+      algorithm: (p.get('algorithm') || 'SHA1').toUpperCase()
+    };
+  }
+  return { name: nameField || 'Cuenta', secret: text, digits: 6, period: 30, algorithm: 'SHA1' };
+}
+
+async function addAccount(text, nameField) {
+  const acc = parseInput(text, nameField);
+  b32decode(acc.secret);           // valida
+  await totp(acc);                  // valida algoritmo
+  accounts.push(acc); save(); render();
+}
+
+function msg(t, cls) { const m = $('msg'); m.textContent = t; m.className = cls || ''; }
+
+$('add').onclick = async () => {
+  try { await addAccount($('secret').value, $('name').value.trim()); $('secret').value = ''; $('name').value = ''; msg('Cuenta añadida', 'ok'); }
+  catch (e) { msg(e.message, 'err'); }
+};
+
+async function decodeQR(img) {
+  if ('BarcodeDetector' in window) {
+    try { const r = await new BarcodeDetector({ formats: ['qr_code'] }).detect(img); if (r.length) return r[0].rawValue; } catch {}
+  }
+  if (!window.jsQR) return null;
+  for (const target of [800, 500, 1200, 300, 0]) {
+    const k = target ? Math.min(1, target / Math.max(img.width, img.height)) : 1;
+    const w = Math.round(img.width * k), h = Math.round(img.height * k), pad = 40;
+    const c = document.createElement('canvas'); c.width = w + pad * 2; c.height = h + pad * 2;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, pad, pad, w, h);
+    const d = ctx.getImageData(0, 0, c.width, c.height);
+    const r = jsQR(d.data, c.width, c.height, { inversionAttempts: 'attemptBoth' });
+    if (r) return r.data;
+  }
+  return null;
+}
+
+$('file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const img = await createImageBitmap(f);
+    const text = await decodeQR(img);
+    if (!text) throw new Error('No se encontró ningún QR. Recorta la captura para que solo se vea el QR, o pega la clave manual.');
+    await addAccount(text, $('name').value.trim());
+    msg('QR leído y cuenta añadida', 'ok');
+  } catch (err) { msg(err.message, 'err'); }
+  e.target.value = '';
+};
+
+let stream = null;
+function stopCam() { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; $('video').style.display = 'none'; $('cam').textContent = 'Escanear con cámara'; }
+$('cam').onclick = async () => {
+  if (stream) return stopCam();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const v = $('video'); v.srcObject = stream; v.style.display = 'block'; await v.play();
+    $('cam').textContent = 'Detener cámara';
+    const c = document.createElement('canvas'), ctx = c.getContext('2d', { willReadFrequently: true });
+    const tick = async () => {
+      if (!stream) return;
+      if (v.videoWidth) {
+        c.width = v.videoWidth; c.height = v.videoHeight; ctx.drawImage(v, 0, 0);
+        const d = ctx.getImageData(0, 0, c.width, c.height);
+        const r = window.jsQR && jsQR(d.data, c.width, c.height);
+        if (r) {
+          try { await addAccount(r.data, $('name').value.trim()); msg('QR escaneado y cuenta añadida', 'ok'); stopCam(); return; }
+          catch (e) { msg(e.message, 'err'); }
+        }
+      }
+      setTimeout(tick, 250);
+    };
+    tick();
+  } catch { msg('No se pudo acceder a la cámara', 'err'); stopCam(); }
+};
+
+function render() {
+  const L = $('list');
+  if (!accounts.length) { L.innerHTML = '<div class="empty">Aún no hay cuentas. Añade una clave o un QR.</div>'; return; }
+  L.innerHTML = '';
+  accounts.forEach((a, i) => {
+    const d = document.createElement('div'); d.className = 'acc';
+    d.innerHTML = `<div class="info"><div class="name"></div><div class="code" title="Copiar">······</div></div>
+      <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="4"/>
+      <circle class="arc" cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="4" stroke-dasharray="94.25" transform="rotate(-90 18 18)"/>
+      <text class="sec" x="18" y="22" text-anchor="middle" font-size="11" fill="currentColor"></text></svg>
+      <button class="del" title="Eliminar">✕</button>`;
+    d.querySelector('.name').textContent = a.name;
+    d.querySelector('.del').onclick = () => { if (confirm('¿Eliminar "' + a.name + '"?')) { accounts.splice(i, 1); save(); render(); } };
+    d.querySelector('.code').onclick = ev => {
+      const t = ev.target.dataset.raw; if (!t) return;
+      navigator.clipboard?.writeText(t).then(() => { const o = ev.target.textContent; ev.target.textContent = 'Copiado'; setTimeout(() => ev.target.textContent = o, 800); });
+    };
+    L.appendChild(d);
+  });
+  update();
+}
+
+async function update() {
+  const rows = document.querySelectorAll('.acc');
+  for (let i = 0; i < rows.length; i++) {
+    const a = accounts[i], now = Date.now();
+    const left = a.period - (now / 1000) % a.period;
+    const codeEl = rows[i].querySelector('.code');
+    try {
+      const c = await totp(a, now);
+      if (codeEl.dataset.raw !== c) {
+        codeEl.dataset.raw = c;
+        codeEl.textContent = c.length === 6 ? c.slice(0, 3) + ' ' + c.slice(3) : c;
+      }
+    } catch { codeEl.textContent = 'Error'; }
+    rows[i].querySelector('.arc').style.strokeDashoffset = 94.25 * (1 - left / a.period);
+    rows[i].querySelector('.sec').textContent = Math.ceil(left);
+  }
+}
+
+render();
+setInterval(update, 250);
+</script>
+</body>
+</html>
