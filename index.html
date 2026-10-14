@@ -34,14 +34,6 @@
   .empty{color:var(--muted);text-align:center;padding:12px}
   .hint{color:var(--muted);font-size:.8rem}
 
-  /* Ventanas flotantes: una por cuenta */
-  .win{position:fixed;z-index:50;width:290px;max-width:calc(100vw - 16px);background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
-  .win header{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:move;user-select:none;touch-action:none}
-  .win header .t{flex:1;min-width:0;font-size:.85rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .win header button{background:none;color:var(--muted);padding:2px 8px;font-size:1.1rem}
-  .win .body{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px}
-  .win .code{font-size:2.2rem}
-
   /* Modo ventana propia (popup): solo una cuenta */
   body.solo main > :not(#soloview){display:none}
   #soloview{display:none}
@@ -65,12 +57,12 @@
       <button class="sec" id="cam">Escanear con cámara</button>
     </div>
     <video id="video" playsinline muted></video>
-    <label class="chk"><input type="checkbox" id="autowin" checked> Abrir una ventana propia con el código cada vez que añada una cuenta</label>
+    <label class="chk"><input type="checkbox" id="autowin" checked> Abrir una pestaña nueva con el código cada vez que añada una cuenta</label>
     <div id="msg"></div>
   </div>
 
   <div class="card" id="list"></div>
-  <p class="hint">Todo se procesa en tu navegador. Las claves se guardan solo en este equipo. Toca un código para copiarlo. Con <b>Ventana</b> abres el código flotante dentro de la página (puedes arrastrarlo); con <b>Nueva pestaña</b> se abre en una ventana aparte del navegador.</p>
+  <p class="hint">Todo se procesa en tu navegador. Las claves se guardan solo en este equipo. Toca un código para copiarlo. <b>Abrir pestaña</b> muestra el código de esa cuenta en su propia pestaña, que se actualiza sola.</p>
 
   <div id="soloview">
     <div class="name" id="solo-name"></div>
@@ -78,7 +70,7 @@
     <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="4"/>
       <circle id="solo-arc" cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="4" stroke-dasharray="94.25" transform="rotate(-90 18 18)"/>
       <text id="solo-sec" x="18" y="22" text-anchor="middle" font-size="11" fill="currentColor"></text></svg>
-    <div class="hint">Esta ventana se actualiza sola. Puedes cerrarla cuando termines.</div>
+    <div class="hint">Esta pestaña se actualiza sola. Puedes cerrarla cuando termines.</div>
   </div>
 </main>
 
@@ -195,39 +187,13 @@ async function addAccount(text, nameField) {
   await totp(acc);
   acc.id = id();
   accounts.push(acc); save(); render();
-  if ($('autowin').checked) openWin(acc.id);
+  if ($('autowin').checked) openTab(acc.id, true);
 }
 
-/* ---------- Ventanas flotantes ---------- */
-const wins = new Map();
-function openWin(accId) {
-  if (wins.has(accId)) { wins.get(accId).el.style.zIndex = 50 + wins.size; return; }
-  const a = accounts.find(x => x.id === accId); if (!a) return;
-  const el = document.createElement('div'); el.className = 'win';
-  el.innerHTML = `<header><span class="t"></span><button title="Cerrar">✕</button></header>
-    <div class="body"><div class="code" title="Copiar">······</div>
-    <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="4"/>
-    <circle class="arc" cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="4" stroke-dasharray="94.25" transform="rotate(-90 18 18)"/>
-    <text class="sec" x="18" y="22" text-anchor="middle" font-size="11" fill="currentColor"></text></svg></div>`;
-  el.querySelector('.t').textContent = a.name;
-  const n = wins.size;
-  el.style.left = Math.max(8, Math.min(innerWidth - 306, 40 + n * 28)) + 'px';
-  el.style.top = (80 + n * 28) + 'px';
-  document.body.appendChild(el);
-  wins.set(accId, { el });
-  el.querySelector('button').onclick = () => { el.remove(); wins.delete(accId); };
-  el.querySelector('.code').onclick = e => copy(e.currentTarget);
-  // arrastrar
-  const h = el.querySelector('header'); let sx, sy, ox, oy, drag = false;
-  h.onpointerdown = e => { if (e.target.tagName === 'BUTTON') return; drag = true; sx = e.clientX; sy = e.clientY; ox = el.offsetLeft; oy = el.offsetTop; h.setPointerCapture(e.pointerId); el.style.zIndex = 50 + wins.size; };
-  h.onpointermove = e => { if (!drag) return; el.style.left = Math.max(0, Math.min(innerWidth - 80, ox + e.clientX - sx)) + 'px'; el.style.top = Math.max(0, Math.min(innerHeight - 50, oy + e.clientY - sy)) + 'px'; };
-  h.onpointerup = () => drag = false;
-  update();
-}
-
-function popup(accId) {
-  const w = window.open(location.pathname + '?w=' + encodeURIComponent(accId), 'w2fa_' + accId, 'popup=yes,width=360,height=340');
-  if (!w) msg('El navegador bloqueó la ventana. Permite ventanas emergentes para esta página.', 'err');
+function openTab(accId, fromAuto) {
+  const w = window.open(location.pathname + '?w=' + encodeURIComponent(accId), '_blank');
+  if (!w) msg('El navegador bloqueó la pestaña nueva. Permite ventanas emergentes para esta página y pulsa "Abrir pestaña" en la cuenta.', 'err');
+  return w;
 }
 
 function copy(el) {
@@ -314,15 +280,12 @@ function render() {
       <svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="4"/>
       <circle class="arc" cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" stroke-width="4" stroke-dasharray="94.25" transform="rotate(-90 18 18)"/>
       <text class="sec" x="18" y="22" text-anchor="middle" font-size="11" fill="currentColor"></text></svg>
-      <button class="ibtn w" title="Ventana flotante en esta página">Ventana</button>
-      <button class="ibtn p" title="Abrir en una ventana aparte del navegador">Nueva pestaña</button>
+      <button class="ibtn p" title="Abrir el código en una pestaña nueva">Abrir pestaña</button>
       <button class="ibtn x" title="Eliminar">✕</button>`;
     d.querySelector('.name').textContent = a.name;
-    d.querySelector('.w').onclick = () => openWin(a.id);
-    d.querySelector('.p').onclick = () => popup(a.id);
+    d.querySelector('.p').onclick = () => openTab(a.id);
     d.querySelector('.x').onclick = () => {
       if (!confirm('¿Eliminar "' + a.name + '"?')) return;
-      const w = wins.get(a.id); if (w) { w.el.remove(); wins.delete(a.id); }
       accounts.splice(i, 1); save(); render();
     };
     d.querySelector('.code').onclick = ev => copy(ev.currentTarget);
@@ -346,9 +309,6 @@ async function update() {
   const now = Date.now();
   for (const row of document.querySelectorAll('.acc')) {
     const a = accounts.find(x => x.id === row.dataset.id); if (a) await paint(row, a, now);
-  }
-  for (const [accId, w] of wins) {
-    const a = accounts.find(x => x.id === accId); if (a) await paint(w.el, a, now);
   }
 }
 
