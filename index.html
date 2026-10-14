@@ -72,6 +72,7 @@
     <input id="bkpass" type="password" placeholder="Contraseña de la copia" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font:inherit">
     <div class="row">
       <button class="sec" id="export">Descargar copia</button>
+      <button id="share">Crear enlace para compartir</button>
       <label class="btn sec" style="margin:0">Restaurar copia<input id="import" type="file" accept=".json,application/json" hidden></label>
     </div>
     <div class="hint" id="store-status" style="margin-top:8px"></div>
@@ -127,15 +128,24 @@ async function backupKey(pass, salt) {
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 250000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
-async function exportBackup() {
-  const pass = $('bkpass').value;
+async function shareLink() {
+  if (!accounts.length) return msg('No hay cuentas que compartir.', 'err');
+  const rnd = crypto.getRandomValues(new Uint8Array(24));
+  const key = Array.from(rnd, b => B32[b & 31]).join('');
+  await exportBackup(key, 'vault.json', true);
+  const link = location.origin + location.pathname + '#k=' + key;
+  msg('Paso 1: sube el archivo vault.json descargado al repositorio de GitHub (Add file → Upload files). Paso 2: envía este enlace a tu amigo: ' + link, 'ok');
+  try { await navigator.clipboard.writeText(link); } catch {}
+}
+async function exportBackup(passArg, fileName, silent) {
+  const pass = typeof passArg === 'string' ? passArg : $('bkpass').value;
   if (pass.length < 6) return msg('Escribe una contraseña de al menos 6 caracteres para cifrar la copia.', 'err');
   if (!accounts.length) return msg('No hay cuentas que guardar.', 'err');
   const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await backupKey(pass, salt), new TextEncoder().encode(JSON.stringify(accounts))));
   const blob = new Blob([JSON.stringify({ v: 1, salt: b64(salt), iv: b64(iv), data: b64(ct) })], { type: 'application/json' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'copia-2fa.json'; a.click();
-  msg('Copia descargada. Guárdala en un lugar seguro y recuerda la contraseña.', 'ok');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fileName || 'copia-2fa.json'; a.click();
+  if (!silent) msg('Copia descargada. Guárdala en un lugar seguro y recuerda la contraseña.', 'ok');
 }
 async function importBackup(file, passOverride) {
   const pass = passOverride || $('bkpass').value;
@@ -399,7 +409,8 @@ if (soloId) {
   };
   tick(); setInterval(tick, 250);
 } else {
-  $('export').onclick = exportBackup;
+  $('export').onclick = () => exportBackup();
+  $('share').onclick = shareLink;
   $('import').onchange = e => { const f = e.target.files[0]; if (f) importBackup(f); e.target.value = ''; };
   render();
   setInterval(update, 250);
@@ -412,6 +423,12 @@ if (soloId) {
   fetch('vault.json', { cache: 'no-store' }).then(r => r.ok ? r.text() : null).then(t => {
     if (!t) return;
     try { JSON.parse(t); } catch { return; }
+    const hk = /^#k=([A-Z2-7]{20,})$/.exec(location.hash);
+    if (hk) {
+      history.replaceState(null, '', location.pathname);
+      importBackup(t, hk[1]);
+      return;
+    }
     $('vaultcard').hidden = false;
     const go = async () => { const p = $('vaultpass').value; if (!p) return; await importBackup(t, p); if (/restaurada/.test($('msg').textContent)) { $('vaultpass').value = ''; $('vaultcard').hidden = true; } };
     $('vaultgo').onclick = go;
